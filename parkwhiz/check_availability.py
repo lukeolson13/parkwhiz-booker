@@ -13,7 +13,7 @@ DATE_FORMAT = '%Y-%m-%d'
 DT_FORMAT = DATE_FORMAT + 'T%H:%M:%S'
 LOCATIONS = {
     'COPPER': {
-        'location_id': '37193',
+        'location_id': '37193',  # Free Alpine lot
         'q': 'anchor_coordinates:39.50079,-106.154283 search_type:transient bounds:39.50829134860297,'
              '-106.16043976897441,39.50829134860297,-106.13579260107285,39.494053243956756,-106.13579260107285,'
              '39.494053243956756,-106.16043976897441',
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class CheckAvailability:
-    def __init__(self, location, date, email='lukeolson13@gmail.com', license_plate='852-EVI'):
+    def __init__(self, location, date, email, license_plate):
         assert location.upper() in LOCATIONS.keys()
         self.location = LOCATIONS[location.upper()]
         self.date = date
@@ -58,6 +58,7 @@ class CheckAvailability:
             'quote_id': quote_id,
             'plate_number': self.license_plate,
             'final_price': final_price,
+            'send_email_confirmation': True,
         }
         params_with_at = {
             'customer_email': self.email,
