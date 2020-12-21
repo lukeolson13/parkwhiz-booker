@@ -1,11 +1,14 @@
 from cached_property import cached_property
+import logging
 import requests
 import sys
+import time
 import urllib
 
 from datetime import datetime, timedelta
 
-BASE_URL = 'https://api.parkwhiz.com/v4/quotes/'
+BASE_QUOTES_URL = 'https://api.parkwhiz.com/v4/quotes/'
+BASE_BOOKING_URL = 'https://api.parkwhiz.com/v4/bookings/'
 DATE_FORMAT = '%Y-%m-%d'
 DT_FORMAT = DATE_FORMAT + 'T%H:%M:%S'
 LOCATIONS = {
@@ -17,16 +20,19 @@ LOCATIONS = {
     },
 }
 
+logger = logging.getLogger(__name__)
+
 
 class CheckAvailability:
-    def __init__(self, location, date):
+    def __init__(self, location, date, email='lukeolson13@gmail.com', license_plate='852-EVI'):
         assert location.upper() in LOCATIONS.keys()
         self.location = LOCATIONS[location.upper()]
         self.date = date
-
+        self.email = email
+        self.license_plate = license_plate
 
     @cached_property
-    def request_params(self):
+    def get_params(self):
         start_dt = (datetime.strptime(self.date, DATE_FORMAT) + timedelta(hours=6)).strftime(DT_FORMAT)
         end_dt = (datetime.strptime(self.date, DATE_FORMAT) + timedelta(hours=22)).strftime(DT_FORMAT)
         returns = 'curated'
@@ -47,22 +53,62 @@ class CheckAvailability:
 
         return urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
 
+    def _post_params(self, quote_id, final_price=0):
+        params = {
+            'quote_id': quote_id,
+            'plate_number': self.license_plate,
+            'final_price': final_price,
+        }
+        params_with_at = {
+            'customer_email': self.email,
+        }
+
+        params = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
+        params += '&'
+        params += urllib.parse.urlencode(params_with_at, quote_via=urllib.parse.quote).replace('%40', '@')
+
+        return params
+
     def _get(self):
-        resp = requests.get(BASE_URL, params=self.request_params)
+        resp = requests.get(BASE_QUOTES_URL, params=self.get_params)
         data = resp.json()
 
         return data
 
+    def _post(self, quote_id):
+        resp = requests.post(BASE_BOOKING_URL, params=self._post_params(quote_id))
+        data = resp.json()
+        if isinstance(data, dict) and 'status' in data.keys() and (data['status'] != 200):
+            raise ValueError(data['message'])
+
+    def _book(self, quote_id):
+        try:
+            self._post(quote_id)
+            return True
+        except Exception as e:
+            logger.exception(e)
+            print(f'Failure: {e}')
+            return False
+
     def run(self):
-        data = self._get()
-        if (
-            data
-            and ('curated_data' in data.keys())
-            and (data['curated_data']['cheapest']['location_id'] == self.location['location_id'])
-        ):
-            print('available!')
+        success = False
+        fails = 0
+        while (not success) and (fails < 5):
+            data = self._get()
+            if (
+                data
+                and ('curated_data' in data.keys())
+                and (data['curated_data']['cheapest']['location_id'] == self.location['location_id'])
+            ):
+                quote_id = data['curated_data']['cheapest']['purchase_options'][0]['id']
+                success = self._book(quote_id)
+                fails += 1
+            time.sleep(1)
+
+        if success:
+            print('Booked!!!!')
         else:
-            print('no no no...')
+            raise
 
 
 if __name__ == '__main__':
